@@ -17,7 +17,7 @@
 
 REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
 
-# shellcheck source=Tests/ops/_bats-helpers.sh
+# shellcheck source=hyper-v/ubuntu/Ansible/Tests/ops/_bats-helpers.sh
 source "${BATS_TEST_DIRNAME}/_bats-helpers.sh"
 
 setup() {

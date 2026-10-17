@@ -16,7 +16,7 @@
 SCRIPT="$(cd "${BATS_TEST_DIRNAME}/../../ops" && pwd)/_stage-runner-tarball.sh"
 SUBSTRATE_ROOT="$(cd "${BATS_TEST_DIRNAME}/../../../../../../Common-Ansible" 2>/dev/null && pwd || true)"
 
-# shellcheck source=Tests/ops/_bats-helpers.sh
+# shellcheck source=hyper-v/ubuntu/Ansible/Tests/ops/_bats-helpers.sh
 source "${BATS_TEST_DIRNAME}/_bats-helpers.sh"
 
 setup() {
