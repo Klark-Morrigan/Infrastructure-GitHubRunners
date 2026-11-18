@@ -67,7 +67,7 @@ STUB
     # _to_windows_path lives in Common-Automation, mocked here as a
     # passthrough (the pwsh stub keys off the file basename either way). The
     # stub goes in the COMMON_AUTOMATION_ROOT _bats_init_temp stands up.
-    cat >"${COMMON_AUTOMATION_ROOT}/scripts/_to-windows-path.sh" <<'STUB'
+    cat >"${COMMON_AUTOMATION_ROOT}/.github/lib/to-windows-path.sh" <<'STUB'
 #!/usr/bin/env bash
 _to_windows_path() { printf '%s' "$1"; }
 STUB

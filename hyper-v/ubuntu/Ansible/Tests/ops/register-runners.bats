@@ -30,7 +30,7 @@ setup() {
     # The entry sources ops/imports/_log.sh (cross-repo logger adapter) for
     # its log helpers and ops/imports/_common-ansible-root.sh to find the
     # substrate bridge; copy the imports/ folder so both source resolves. The
-    # logger adapter loads scripts/log.sh from the COMMON_AUTOMATION_ROOT stub
+    # logger adapter loads .github/lib/log.sh from the COMMON_AUTOMATION_ROOT stub
     # _bats_init_temp stands up.
     cp -r "${REPO_ROOT}/ops/imports" "${TEST_REPO}/ops/"
     # Shared GH_TOKEN-acquisition helper the entry sources; copy it next to

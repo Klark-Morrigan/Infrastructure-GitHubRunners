@@ -35,8 +35,8 @@ _bats_resolve_bash() {
 }
 
 # Stand up a fake COMMON_AUTOMATION_ROOT containing the cross-repo shell
-# helpers ops/ scripts source at runtime - scripts/log.sh (the shared logger
-# every ops/ script pulls in via the _log.sh resolver shim) and scripts/
+# helpers ops/ scripts source at runtime - .github/lib/log.sh (the shared logger
+# every ops/ script pulls in via the _log.sh resolver shim) and .github/lib/
 # timing.sh (the timing-span emitter register-runners.sh sources via the
 # _timing.sh shim). CI checks out no Common-Automation sibling (the bash
 # workflow is the reusable one FROM Common-Automation, run against this repo),
@@ -47,21 +47,21 @@ _bats_resolve_bash() {
 # assertions hold against either. The timing stub reproduces the emitter's
 # disabled path only: these ops/ suites run with TIMING_TREE_OUTPUT_PATH unset,
 # so every verb is inert and timing_enabled is false (the real emitter's
-# behaviour is covered by Common-Automation/scripts/timing.bats).
+# behaviour is covered by Common-Automation/.github/lib/timing.bats).
 _bats_install_common_automation_stub() {
     local root="$1"
-    mkdir -p "${root}/scripts"
-    cat >"${root}/scripts/timing.sh" <<'STUB'
+    mkdir -p "${root}/.github/lib"
+    cat >"${root}/.github/lib/timing.sh" <<'STUB'
 #!/usr/bin/env bash
-# Test stub for Common-Automation/scripts/timing.sh - disabled-path only.
+# Test stub for Common-Automation/.github/lib/timing.sh - disabled-path only.
 timing_init()       { :; }
 timing_enabled()    { return 1; }
 timing_span_begin() { :; }
 timing_span_end()   { :; }
 STUB
-    cat >"${root}/scripts/log.sh" <<'STUB'
+    cat >"${root}/.github/lib/log.sh" <<'STUB'
 #!/usr/bin/env bash
-# Test stub for Common-Automation/scripts/log.sh - the [ts] LEVEL <script>:
+# Test stub for Common-Automation/.github/lib/log.sh - the [ts] LEVEL <script>:
 # stderr format, minus colour, with no cross-repo colors.sh dependency.
 _log_emit() {
     local level="$1"

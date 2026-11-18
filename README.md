@@ -503,7 +503,7 @@ scripts/fix-permissions.sh     # or scripts\fix-permissions.bat
 ```
 
 All three runners are thin shims over Common-Automation's engine, pointed at
-this repo via the `COMMON_AUTOMATION_TARGET_REPO` env var, so a sibling
+this repo via the `CONSUMER_REPO_PATH` env var, so a sibling
 checkout at `..\Common-Automation` is required. `.gitattributes` pins `*.sh`
 to LF and `*.bat` to CRLF - Linux CI runners reject CRLF shebangs.
 

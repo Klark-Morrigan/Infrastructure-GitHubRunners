@@ -30,7 +30,7 @@ setup() {
     chmod +x "${TEST_REPO}/ops/deregister-runners.sh"
     # The entry sources ops/imports/_log.sh (logger adapter) and
     # ops/imports/_common-ansible-root.sh (substrate resolver); copy imports/
-    # so both source resolves. The logger adapter loads scripts/log.sh from
+    # so both source resolves. The logger adapter loads .github/lib/log.sh from
     # the COMMON_AUTOMATION_ROOT stub _bats_init_temp stands up.
     cp -r "${REPO_ROOT}/ops/imports" "${TEST_REPO}/ops/"
     # Shared GH_TOKEN-acquisition helper the entry sources.
