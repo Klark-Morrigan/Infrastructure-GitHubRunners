@@ -208,7 +208,7 @@ teardown() {
     export STUB_GETENT_EXIT=2
     export STUB_NSLOOKUP_MODE=timeout
     export STUB_CURL_RAW_EXIT=28
-    expected="router-uplink-down: router 10.10.0.1 has no way out; run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
+    expected="router-uplink-down: router 10.10.0.1 has no way out; check the host for a VPN holding its default route, which ICS cannot share; if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
     run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
@@ -223,7 +223,7 @@ teardown() {
     # ARRANGE
     export STUB_GETENT_EXIT=2
     export STUB_NSLOOKUP_MODE=timeout
-    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
+    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; check the host for a VPN holding its default route, which ICS cannot share; if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
     run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
@@ -240,7 +240,7 @@ teardown() {
     export STUB_GETENT_EXIT=2
     export STUB_NSLOOKUP_MODE=timeout
     export STUB_CURL_RAW_EXIT=60
-    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
+    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; check the host for a VPN holding its default route, which ICS cannot share; if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
     run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
@@ -256,7 +256,7 @@ teardown() {
     # ARRANGE
     export STUB_GETENT_EXIT=2
     export STUB_NSLOOKUP_MODE=noservers
-    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
+    expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; check the host for a VPN holding its default route, which ICS cannot share; if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
     run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
@@ -332,7 +332,7 @@ teardown() {
     # ARRANGE
     export STUB_CURL_HOST_EXIT=28
     export STUB_CURL_RAW_EXIT=28
-    expected="router-uplink-down: router 10.10.0.1 has no way out; run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
+    expected="router-uplink-down: router 10.10.0.1 has no way out; check the host for a VPN holding its default route, which ICS cannot share; if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
     run --separate-stderr "${BASH_BIN}" "${SCRIPT}"

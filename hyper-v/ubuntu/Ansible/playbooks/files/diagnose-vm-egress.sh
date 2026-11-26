@@ -52,7 +52,11 @@ readonly ROUTER_DNS_PORT=53
 # curl's exit code when it rejects the server's certificate.
 readonly CURL_EXIT_CERT_REJECTED=60
 
-readonly PREFLIGHT_REMEDY='run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
+# Both host-side verdicts name a VPN first. One that holds the host's default
+# route takes the traffic ICS forwards, so the router has no way out while the
+# host itself is online, and the preflight neither detects nor repairs that.
+readonly HOST_REMEDY='check the host for a VPN holding its default route, which ICS cannot share;'\
+' if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
 readonly PROBE_TOOLS=(ip ping timeout getent nslookup curl)
 
 # The combined output of the last probe run_logged_probe ran.
@@ -67,7 +71,7 @@ report() {
 report_uplink_down() {
 
     local gateway="$1"
-    report "router-uplink-down: router ${gateway} has no way out; ${PREFLIGHT_REMEDY}"
+    report "router-uplink-down: router ${gateway} has no way out; ${HOST_REMEDY}"
 }
 
 log_probe_result() {
@@ -211,7 +215,7 @@ diagnose_router_dns() {
             raw_exit_code=$?
 
         if is_tls_reached "${raw_exit_code}"; then
-            report "router-upstream-dns-silent: router ${gateway} forwards traffic but its upstream DNS is silent; ${PREFLIGHT_REMEDY}"
+            report "router-upstream-dns-silent: router ${gateway} forwards traffic but its upstream DNS is silent; ${HOST_REMEDY}"
         fi
 
         report_uplink_down "${gateway}"
