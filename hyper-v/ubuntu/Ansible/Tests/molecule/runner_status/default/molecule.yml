@@ -6,7 +6,8 @@
 # lives on the controller (shared Tests/mock-github-api.py, the same mock the
 # runner_registration scenarios use). The on-VM systemctl probes hit a stub
 # systemctl installed in prepare, so the scenario controls unit-present /
-# active state without real systemd.
+# active state without real systemd. The egress diagnosis script likewise runs
+# against stub probe tools from prepare.
 #
 # No side_effect / verify in the sequence: the per-runner verdicts are
 # asserted inside converge (host facts do not cross to a separate verify

@@ -7,9 +7,12 @@
 #
 # Each line also reports egress=ok|unreachable: whether the VM itself can
 # reach GitHub. It is diagnostic context only (it does not flip UP/DOWN) -
-# its job is to disambiguate a [service=active, github=offline] runner: with
-# egress unreachable the VM has no path out (router / DNS); with egress ok
-# the listener is merely stale and a service restart should reconnect it.
+# its job is to disambiguate a [service=active, github=offline] runner. With
+# egress ok the listener is merely stale and a service restart should
+# reconnect it. With egress unreachable the line also names the first broken
+# hop on the VM's path out and its remedy, such as
+#   egress=unreachable (router-uplink-down: router 10.10.0.1 has no way out; ...)
+# Run with -v to see the raw probe results behind that hop.
 #
 # The report is informational: a DOWN runner is a normal result, not an
 # error, so the run still exits 0 - only an actual error (missing
@@ -48,6 +51,10 @@
       ansible.builtin.set_fact:
         runner_status_results: []
 
+    # Egress is a host property, so it is probed once here, not per runner.
+    - name: Probe the VM's egress to GitHub
+      ansible.builtin.include_tasks: tasks/_runner-status-egress.yml
+
     - name: Probe each declared runner's status
       ansible.builtin.include_tasks: tasks/_runner-status-one.yml
       loop: "{{ vm_runner_entries }}"
@@ -66,7 +73,9 @@
           [service={{ item.service_active | ternary('active', 'inactive') }},
           github={{ item.github_status }}{{ item.github_busy
           | ternary(' (busy)', '') }},
-          egress={{ item.egress_reachable | ternary('ok', 'unreachable') }}]{{
+          egress={{ item.egress_reachable | ternary('ok', 'unreachable') }}{{
+          (item.egress_diagnosis | length > 0)
+          | ternary(' (' ~ item.egress_diagnosis ~ ')', '') }}]{{
           ansi_reset }}
       loop: "{{ runner_status_results }}"
       loop_control:

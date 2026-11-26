@@ -10,9 +10,12 @@
 # here directly so the assertions read runner_status_results on the same
 # host (host facts do not cross to a separate verify play).
 #
-# A fourth assertion covers the egress signal: the VM-side probe is pointed
-# at a dead port (see runner_egress_probe_url below), so every verdict's
+# Two more assertions cover the egress signal from
+# playbooks/tasks/_runner-status-egress.yml. The VM-side probe is pointed at a
+# dead port (see runner_egress_probe_url below), so every verdict's
 # egress_reachable reads false - exercising the real probe task hermetically.
+# That failure runs the real diagnosis script on the container, whose probe
+# tools prepare stubs, so every verdict carries its no-default-gateway line.
 
 - name: Converge - runner-status per-runner verdicts
   hosts: all
@@ -44,6 +47,9 @@
     - name: Initialise the verdict accumulator
       ansible.builtin.set_fact:
         runner_status_results: []
+
+    - name: Probe the container's egress
+      ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-egress.yml
 
     - name: Probe each fixtured runner
       ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-one.yml
@@ -98,3 +104,15 @@
           - egress_values | length == 3
           - egress_values | select | list | length == 0
         fail_msg: "egress_reachable should be false for all runners: {{ egress_values }}"
+
+    - name: Assert every verdict carries the egress diagnosis (stubbed ip, no routes)
+      vars:
+        diagnoses: >-
+          {{ runner_status_results | map(attribute='egress_diagnosis') | unique | list }}
+        expected_diagnosis: >-
+          no-default-gateway: this VM has no default route through a gateway;
+          check its netplan gateway
+      ansible.builtin.assert:
+        that:
+          - diagnoses == [expected_diagnosis]
+        fail_msg: "egress_diagnosis should be no-default-gateway for all runners: {{ diagnoses }}"

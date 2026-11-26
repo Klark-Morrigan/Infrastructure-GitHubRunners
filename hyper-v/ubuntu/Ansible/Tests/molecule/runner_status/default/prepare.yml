@@ -6,7 +6,9 @@
 #   container  - install a stub systemctl ahead of the real one on PATH plus
 #     two fixture files that drive which runners have a unit and which units
 #     are active, so the scenario controls the on-VM service axis without
-#     real systemd.
+#     real systemd. Also stub the egress diagnosis's probe tools, so its
+#     verdict is fixed by the scenario rather than by the image or the
+#     container's network.
 
 - name: Prepare controller - launch mock GitHub API
   hosts: localhost
@@ -95,3 +97,23 @@
               ;;
             *) exit 0 ;;
           esac
+
+    # An ip that reports no routes makes playbooks/files/diagnose-vm-egress.sh
+    # stop at its first hop with no-default-gateway. The other probe tools only
+    # need to exist for its tool check; getent and timeout are real.
+    - name: Install a stub ip that reports no routes
+      ansible.builtin.copy:
+        dest: /usr/local/bin/ip
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exit 0
+
+    - name: Install stub probe tools the diagnosis never reaches
+      ansible.builtin.copy:
+        dest: "/usr/local/bin/{{ item }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exit 1
+      loop: [ping, nslookup, curl]

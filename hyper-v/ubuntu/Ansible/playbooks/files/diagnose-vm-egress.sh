@@ -40,7 +40,9 @@ readonly PING_TIMEOUT_SECONDS=2
 readonly DNS_TIMEOUT_SECONDS=2
 readonly HTTPS_TIMEOUT_SECONDS=5
 
-readonly PREFLIGHT_REMEDY='run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
+# Forward slashes, which PowerShell accepts: Ansible's default callback
+# JSON-encodes the report, which would print a backslash doubled.
+readonly PREFLIGHT_REMEDY='run ./scripts/Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
 readonly PROBE_TOOLS=(ip ping timeout getent nslookup curl)
 
 report() {
