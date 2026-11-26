@@ -9,7 +9,12 @@
 # each driven by its own STUB_* variable, so a case sets up one broken hop and
 # reads the verdict line. The stubs name bash by absolute path rather than via
 # env, so the missing-tool case can strip PATH down to the stub folder alone.
+# Every case runs with --separate-stderr: the verdict is stdout alone, and the
+# probe log on stderr is asserted on its own.
 # Run with: bats Tests/playbooks/files/diagnose-vm-egress.bats
+
+# run --separate-stderr arrived in 1.5.0.
+bats_require_minimum_version 1.5.0
 
 SCRIPT="$(cd "${BATS_TEST_DIRNAME}/../../../playbooks/files" && pwd)/diagnose-vm-egress.sh"
 
@@ -87,7 +92,7 @@ teardown() {
     expected='ok'
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -101,7 +106,7 @@ teardown() {
     expected="no-default-gateway: this VM has no default route through a gateway; check its netplan gateway"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -115,7 +120,7 @@ teardown() {
     expected="no-default-gateway: this VM has no default route through a gateway; check its netplan gateway"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -130,7 +135,7 @@ teardown() {
     expected="gateway-unreachable: router 10.10.0.1 does not answer; start the router VM or check this VM's switch"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -145,7 +150,7 @@ teardown() {
     expected='ok'
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -160,7 +165,7 @@ teardown() {
     expected="vm-resolver-misconfigured: router 10.10.0.1 answers DNS but this VM's resolver does not; check its netplan nameservers"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -174,7 +179,7 @@ teardown() {
     expected="vm-resolver-misconfigured: router 10.10.0.1 answers DNS but this VM's resolver does not; check its netplan nameservers"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -189,7 +194,7 @@ teardown() {
     expected="router-dns-refused: router 10.10.0.1 refuses DNS; restart dnsmasq on the router VM"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -205,7 +210,7 @@ teardown() {
     expected="router-uplink-down: router 10.10.0.1 has no way out; run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -220,7 +225,7 @@ teardown() {
     expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -236,7 +241,7 @@ teardown() {
     expected="router-upstream-dns-silent: router 10.10.0.1 forwards traffic but its upstream DNS is silent; run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -251,7 +256,7 @@ teardown() {
     expected="router-dns-error: router 10.10.0.1 answered DNS with an error: ** server can't find api.github.com: NXDOMAIN"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -265,7 +270,7 @@ teardown() {
     expected="https-failed: api.github.com resolves but HTTPS fails; check filtering past the router"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -281,7 +286,7 @@ teardown() {
     expected="router-uplink-down: router 10.10.0.1 has no way out; run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host"
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}"
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -297,7 +302,7 @@ teardown() {
     # ACT
     # PATH holds the stubs alone for this one command, so bats' own teardown
     # still finds rm.
-    run "${BASH_BIN}" -c "PATH='${STUBS}' '${BASH_BIN}' '${SCRIPT}'"
+    run --separate-stderr "${BASH_BIN}" -c "PATH='${STUBS}' '${BASH_BIN}' '${SCRIPT}'"
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -310,7 +315,7 @@ teardown() {
     expectedProbe='https://example.test'
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}" example.test 9.9.9.9
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}" example.test 9.9.9.9
 
     # ASSERT
     [ "${status}" -eq 0 ]
@@ -326,9 +331,78 @@ teardown() {
     expectedProbe='https://9.9.9.9'
 
     # ACT
-    run "${BASH_BIN}" "${SCRIPT}" example.test 9.9.9.9
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}" example.test 9.9.9.9
 
     # ASSERT
     [ "${status}" -eq 0 ]
     grep -qF -- "${expectedProbe}" "${CURL_LOG}"
+}
+
+@test "logs each probe it runs to stderr on a healthy path" {
+
+    # ARRANGE
+    expectedLog='gateway: 10.10.0.1
+ping 10.10.0.1: exit 0
+getent api.github.com: exit 0
+curl https://api.github.com: exit 0'
+
+    # ACT
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
+
+    # ASSERT
+    [ "${status}" -eq 0 ]
+    [ "${stderr}" = "${expectedLog}" ]
+}
+
+@test "logs the ARP entry, the router's DNS answer and the raw-IP probe when DNS times out" {
+
+    # ARRANGE
+    export STUB_PING_EXIT=1
+    export STUB_GETENT_EXIT=2
+    export STUB_NSLOOKUP_MODE=timeout
+    export STUB_CURL_RAW_EXIT=28
+    expectedLog='gateway: 10.10.0.1
+ping 10.10.0.1: exit 1
+arp 10.10.0.1: 10.10.0.1 dev eth0 lladdr 00:15:5d:00:00:01 REACHABLE
+getent api.github.com: exit 2
+nslookup api.github.com via 10.10.0.1: exit 1: ;; communications error to 10.10.0.1#53: timed out
+curl https://1.1.1.1: exit 28'
+
+    # ACT
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
+
+    # ASSERT
+    [ "${status}" -eq 0 ]
+    [ "${stderr}" = "${expectedLog}" ]
+}
+
+@test "logs a gateway with no ARP entry as none" {
+
+    # ARRANGE
+    export STUB_PING_EXIT=1
+    export STUB_NEIGH=''
+    expectedLog='gateway: 10.10.0.1
+ping 10.10.0.1: exit 1
+arp 10.10.0.1: none'
+
+    # ACT
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
+
+    # ASSERT
+    [ "${status}" -eq 0 ]
+    [ "${stderr}" = "${expectedLog}" ]
+}
+
+@test "logs no gateway as none" {
+
+    # ARRANGE
+    export STUB_DEFAULT_ROUTE=''
+    expectedLog='gateway: none'
+
+    # ACT
+    run --separate-stderr "${BASH_BIN}" "${SCRIPT}"
+
+    # ASSERT
+    [ "${status}" -eq 0 ]
+    [ "${stderr}" = "${expectedLog}" ]
 }
