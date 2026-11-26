@@ -1,8 +1,8 @@
 ---
-# Host-level egress probe, included once per host by playbooks/runner-status.yml
-# before its per-runner loop. Sets two facts that _runner-status-one.yml folds
-# into every runner's verdict. Both are diagnostic context only: neither
-# changes a runner's UP/DOWN verdict.
+# Host-level egress probe, included once per host by _runner-status-host.yml
+# after its SSH check (runner_status_vm_reachable). Sets two facts that every
+# runner's verdict carries. Both are diagnostic context only: neither changes
+# a runner's UP/DOWN verdict.
 #
 #   runner_status_egress_reachable - whether the VM itself can reach GitHub.
 #     The github_status query runs controller-side, so it is blind to the VM's
@@ -11,7 +11,8 @@
 #     cause is the VM having no path out rather than a stale listener.
 #   runner_status_egress_diagnosis - when egress fails, the first broken hop
 #     on the VM's path out and its remedy, from files/diagnose-vm-egress.sh.
-#     Empty when egress works or the VM itself is unreachable.
+#     A vm-unreachable line when SSH to the VM failed, so nothing was probed.
+#     Empty when egress works.
 #
 # Every task is read-only and never fatal, so a down network or a down VM
 # still yields a report.
@@ -29,6 +30,7 @@
   changed_when: false
   failed_when: false
   ignore_unreachable: true
+  when: runner_status_vm_reachable | bool
 
 - name: Record whether the VM reaches GitHub
   ansible.builtin.set_fact:
@@ -37,10 +39,9 @@
 
 # A bare "unreachable" leaves the operator to walk the path out by hand,
 # across the VM, the router VM and the Windows host; the script walks it.
-# Skipped when the VM itself is unreachable: there is nothing to run it on, and
-# another connection attempt only adds SSH retries to the report.
 # The TTY is off because a TTY folds the script's probe log on stderr into its
-# verdict on stdout.
+# stdout. The verdict is the script's last line either way, so it is read from
+# there.
 - name: Diagnose the VM's egress hop by hop
   ansible.builtin.script:
     cmd: ../files/diagnose-vm-egress.sh
@@ -51,8 +52,8 @@
   failed_when: false
   ignore_unreachable: true
   when:
+    - runner_status_vm_reachable | bool
     - not (runner_status_egress_reachable | bool)
-    - not (runner_status_egress_probe.unreachable | default(false))
 
 - name: Show the probe log behind the egress diagnosis
   ansible.builtin.debug:
@@ -61,5 +62,10 @@
   when: runner_status_egress_walk.stderr_lines is defined
 
 - name: Record the egress diagnosis
+  vars:
+    vm_unreachable_diagnosis: 'vm-unreachable: SSH to this VM failed, so its egress was not probed'
   ansible.builtin.set_fact:
-    runner_status_egress_diagnosis: "{{ runner_status_egress_walk.stdout | default('') | trim }}"
+    runner_status_egress_diagnosis: >-
+      {{ (runner_status_vm_reachable | bool)
+         | ternary(runner_status_egress_walk.stdout_lines | default([]) | last | default(''),
+                   vm_unreachable_diagnosis) }}

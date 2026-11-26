@@ -1,6 +1,6 @@
 ---
 # Molecule scenario for the runner-status play (playbooks/runner-status.yml
-# via playbooks/tasks/_runner-status-one.yml).
+# via playbooks/tasks/_runner-status-host.yml, its whole per-host step).
 #
 # The play's GitHub query delegate_to: localhost, so the mock GitHub API
 # lives on the controller (shared Tests/mock-github-api.py, the same mock the

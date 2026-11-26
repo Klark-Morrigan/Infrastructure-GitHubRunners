@@ -397,9 +397,9 @@ below are relative to that slice.
 | Kind | Here | Purpose |
 |---|---|---|
 | Roles | `roles/runner_entry_resolve`, `roles/runner_binary`, `roles/runner_registration`, `roles/runner_service` | Resolve a host's runner entries; cache/extract the tarball; reconcile GitHub registration; install the systemd unit and deliver `/etc/environment` to it |
-| Playbooks | `playbooks/register-runners.yml`, `playbooks/deregister-runners.yml`, `playbooks/runner-status.yml` (+ `playbooks/tasks/`) | Compose the roles per direction |
-| Wrappers | `ops/register-runners.sh`, `ops/deregister-runners.sh`, `ops/runner-status.sh` (+ `.bat`) | Operator entry points |
-| Domain helpers | `ops/_build-extra-vars-GitHubRunners.sh`, `ops/_require-gh-token.sh`, `ops/_stage-runner-tarball.sh`, `ops/_resolve-runner-version.ps1`, `ops/_ensure-runner-tarball.ps1` | Runner-domain extra-vars, token acquisition, tarball staging |
+| Playbooks | `playbooks/register-runners.yml`, `playbooks/deregister-runners.yml`, `playbooks/runner-status.yml` (+ `playbooks/tasks/`, `playbooks/files/`) | Compose the roles per direction; the status play's per-host steps and the on-VM egress diagnosis script |
+| Wrappers | `ops/register-runners.sh`, `ops/deregister-runners.sh` (+ `.bat`), `ops/runner-status.sh` | Operator entry points |
+| Domain helpers | `ops/_build-extra-vars-GitHubRunners.sh`, `ops/_require-gh-token.sh`, `ops/_stage-runner-tarball.sh`, `ops/_decode-json-escapes.sh`, `ops/_resolve-runner-version.ps1`, `ops/_ensure-runner-tarball.ps1` | Runner-domain extra-vars, token acquisition, tarball staging, status report decoding |
 
 The runner config secret is **not** Ansible-specific: both this Ansible flow
 and the PowerShell orchestrators read the same `GitHubRunnersConfig-<Suffix>`
@@ -551,15 +551,20 @@ hyper-v/ubuntu/
       _build-extra-vars-GitHubRunners.sh  Runner-domain extra-vars fragment
       _stage-runner-tarball.sh        Resolve runner version + cache the tarball Windows-side
       _require-gh-token.sh            GitHub PAT acquisition (per-invocation, never vaulted)
+      _decode-json-escapes.sh         Decode the JSON escapes in the status report's output
       _resolve-runner-version.ps1  _ensure-runner-tarball.ps1   Runner version/tarball helpers
       imports/                        Cross-repo resolvers (Common-Ansible + Common-Automation)
-    playbooks/                    register/deregister/runner-status.yml + tasks/
+    playbooks/                    register/deregister/runner-status.yml
+      tasks/                          Status play's per-host steps: SSH check, egress, units, GitHub
+      files/diagnose-vm-egress.sh     On-VM walk naming the first broken hop out and its remedy
     roles/                        runner_entry_resolve, runner_binary, runner_registration, runner_service
     requirements.yml              Galaxy collections (molecule + bootstrap)
     Tests/
-      molecule/                     Molecule scenarios per runner role (Docker driver)
+      molecule/                     Molecule scenarios per runner role + runner_status (Docker driver)
       ops/                          Bats for the operator wrappers + helpers
+      playbooks/files/              Bats for the egress diagnosis script + its probe-tool stubs
       ansible/                      Controller-only playbook smoke test + fixture inventory
+      _bats-helpers.sh              Shared bats fixtures (bash path, scratch dir, logger stubs)
       mock-github-api.py            Shared mock GitHub API for the runner-side tests
 ansible.cfg                     Lint shim: keeps the fleet ansible-lint gate active for the
                                 nested Ansible slice (roles_path -> hyper-v/ubuntu/Ansible/roles).

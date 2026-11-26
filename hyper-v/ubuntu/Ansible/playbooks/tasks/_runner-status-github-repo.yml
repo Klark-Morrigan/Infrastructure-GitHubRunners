@@ -1,0 +1,67 @@
+---
+# Every page of one repository's runners, queried controller-side for
+# _runner-status-host.yml (loop_var: github_url). Adds one entry to
+# runner_status_github_by_url, keyed by github_url:
+#   status  - 200 when every page read cleanly, else the first failing page's
+#             HTTP status (-1 when the call got none).
+#   runners - every runner from the pages that read cleanly.
+# A non-200 status is folded into the verdict rather than aborting, so one
+# repository's auth or rate problem still reports the rest.
+#
+# github_api_base_url defaults to the public API here: it is a
+# roles/runner_registration default that the bridge does not export as an
+# extra-var, and this play is not inside that role, so its default is not in
+# scope. The molecule scenario sets it explicitly to the mock.
+
+- name: Resolve the repository's runners endpoint
+  ansible.builtin.set_fact:
+    runner_status_github_endpoint: >-
+      {{ github_api_base_url | default('https://api.github.com') }}/repos/{{ github_url
+         | urlsplit('path') | regex_replace('^/', '') | regex_replace('\.git$', '')
+      }}/actions/runners
+
+- name: Query GitHub for the first page of the repository's runners
+  ansible.builtin.uri:
+    url: "{{ runner_status_github_endpoint }}?per_page={{ runner_status_github_page_size }}&page=1"
+    headers: &github_headers
+      Authorization: "token {{ github_token }}"
+      Accept: application/vnd.github+json
+  delegate_to: localhost
+  register: runner_status_github_first_page
+  no_log: true
+  failed_when: false
+
+# total_count covers every runner, so it names how many pages there are.
+- name: Query GitHub for the repository's remaining pages
+  vars:
+    page_count: >-
+      {{ ((runner_status_github_first_page.json.total_count | default(0) | int)
+          + runner_status_github_page_size - 1) // runner_status_github_page_size }}
+  ansible.builtin.uri:
+    url: >-
+      {{ runner_status_github_endpoint }}?per_page={{ runner_status_github_page_size
+      }}&page={{ page }}
+    headers: *github_headers
+  loop: "{{ range(2, (page_count | int) + 1) | list }}"
+  loop_control:
+    loop_var: page
+  when: runner_status_github_first_page.status == 200
+  delegate_to: localhost
+  register: runner_status_github_more_pages
+  no_log: true
+  failed_when: false
+
+- name: Record the repository's runners
+  vars:
+    pages: >-
+      {{ [runner_status_github_first_page]
+         + (runner_status_github_more_pages.results | default([])) }}
+    read_pages: "{{ pages | selectattr('status', 'equalto', 200) | list }}"
+    failed_statuses: >-
+      {{ pages | rejectattr('status', 'equalto', 200) | map(attribute='status') | list }}
+  ansible.builtin.set_fact:
+    runner_status_github_by_url: >-
+      {{ runner_status_github_by_url | combine({github_url: {
+           'status': (failed_statuses + [200]) | first,
+           'runners': read_pages | map(attribute='json.runners') | flatten(levels=1) | list,
+         }}) }}

@@ -1,36 +1,33 @@
 ---
-# Converge - drive playbooks/tasks/_runner-status-one.yml against three
-# fixtured runners and assert the verdict each produces:
+# Converge - drive playbooks/tasks/_runner-status-host.yml, the play's whole
+# per-host step, against three fixtured runners and assert the report line
+# each produces:
 #   runner-up        unit active   + GitHub online  -> UP
 #   runner-svc-down  unit inactive + GitHub online  -> DOWN (service axis)
 #   runner-gh-down   unit active   + GitHub absent  -> DOWN (github axis)
+# The assertions live here because host facts do not cross to a separate
+# verify play.
 #
-# The play's report/assert wrapper (playbooks/runner-status.yml) is thin; the
-# verdict logic under test lives in the included per-runner file, applied
-# here directly so the assertions read runner_status_results on the same
-# host (host facts do not cross to a separate verify play).
+# GitHub: runner-gh-down shares runner-up's repository, so the mock's request
+# log shows one query per repository. runner-svc-down sits on the mock's
+# second page (see prepare), so it reads online only if every page is read.
 #
-# Two more assertions cover the egress signal from
-# playbooks/tasks/_runner-status-egress.yml. The VM-side probe is pointed at a
-# dead port (see runner_egress_probe_url below), so every verdict's
-# egress_reachable reads false - exercising the real probe task hermetically.
-# That failure runs the real diagnosis script on the container, whose probe
-# tools prepare stubs, so every verdict carries its no-default-gateway line.
+# Egress runs twice. First against the container's own HTTP listener: the
+# probe reaches it, so no diagnosis runs. Then against a dead port, since the
+# default would hit api.github.com for real, which this hermetic scenario must
+# not depend on. The probe fails, the real diagnosis script runs on the
+# container against prepare's stub probe tools, and every line carries its
+# no-default-gateway verdict.
 
-- name: Converge - runner-status per-runner verdicts
+- name: Converge - runner-status per-host verdicts
   hosts: all
   gather_facts: false
   vars:
     github_token: "fake-pat-for-molecule-scenario-only"
     github_api_base_url: "http://127.0.0.1:18082"
-    # Point the VM-side egress probe at a port nothing listens on, so it
-    # deterministically reads unreachable without any live network: the
-    # uri connect fails, status stays -1, egress_reachable -> false. (The
-    # default would hit api.github.com for real, which this hermetic
-    # scenario must not depend on.) The reachable branch is the trivial
-    # complement of the same ternary.
     runner_egress_probe_url: "http://127.0.0.1:9"
-    status_entries:
+    mock_log: /tmp/runner-status-mock.log
+    vm_runner_entries:
       - vmName: instance
         runnerName: runner-up
         runnerUsername: u-runner
@@ -42,77 +39,69 @@
       - vmName: instance
         runnerName: runner-gh-down
         runnerUsername: u-runner
-        githubUrl: https://github.com/example/repo-gh
+        githubUrl: https://github.com/example/repo-up
   tasks:
-    - name: Initialise the verdict accumulator
-      ansible.builtin.set_fact:
-        runner_status_results: []
-
-    - name: Probe the container's egress
-      ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-egress.yml
-
-    - name: Probe each fixtured runner
-      ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-one.yml
-      loop: "{{ status_entries }}"
-      loop_control:
-        loop_var: entry
-        label: "{{ entry.runnerName }}"
-
-    - name: Assert runner-up is UP (service active + GitHub online)
+    - name: Probe the runners with egress open (local listener)
+      ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-host.yml
       vars:
-        v: >-
-          {{ runner_status_results
-             | selectattr('runner', 'equalto', 'runner-up') | first }}
+        runner_egress_probe_url: "http://127.0.0.1:18083"
+
+    - name: Assert open egress reads ok, with no diagnosis
+      vars:
+        report_lines: "{{ runner_status_results | map(attribute='report_line') | list }}"
+        expected_lines:
+          - "instance/runner-up: UP [service=active, github=online, egress=ok]"
+          - "instance/runner-svc-down: DOWN [service=inactive, github=online, egress=ok]"
+          - "instance/runner-gh-down: DOWN [service=active, github=absent, egress=ok]"
       ansible.builtin.assert:
         that:
-          - v.service_active
-          - v.github_status == 'online'
-        fail_msg: "runner-up verdict wrong: {{ v }}"
+          - report_lines == expected_lines
+        fail_msg: "report lines wrong: {{ report_lines }}"
 
-    - name: Assert runner-svc-down is DOWN on the service axis (inactive + online)
+    - name: Read the mock's request log before the dead-port pass
+      ansible.builtin.slurp:
+        src: "{{ mock_log }}"
+      delegate_to: localhost
+      register: mock_log_before
+
+    - name: Probe the runners with egress dead
+      ansible.builtin.include_tasks: ../../../../playbooks/tasks/_runner-status-host.yml
+
+    - name: Read the mock's request log after the dead-port pass
+      ansible.builtin.slurp:
+        src: "{{ mock_log }}"
+      delegate_to: localhost
+      register: mock_log_after
+
+    - name: Assert each runner's verdict and report line (dead egress, stubbed diagnosis)
       vars:
-        v: >-
-          {{ runner_status_results
-             | selectattr('runner', 'equalto', 'runner-svc-down') | first }}
+        report_lines: "{{ runner_status_results | map(attribute='report_line') | list }}"
+        up_flags: "{{ runner_status_results | map(attribute='up') | list }}"
+        dead_egress: >-
+          egress=unreachable (no-default-gateway: this VM has no default route
+          through a gateway; check its netplan gateway)
+        expected_lines:
+          - "instance/runner-up: UP [service=active, github=online, {{ dead_egress }}]"
+          - "instance/runner-svc-down: DOWN [service=inactive, github=online, {{ dead_egress }}]"
+          - "instance/runner-gh-down: DOWN [service=active, github=absent, {{ dead_egress }}]"
       ansible.builtin.assert:
         that:
-          - not v.service_active
-          - v.github_status == 'online'
-        fail_msg: "runner-svc-down verdict wrong: {{ v }}"
+          - report_lines == expected_lines
+          - up_flags == [true, false, false]
+        fail_msg: "verdicts wrong: {{ up_flags }} {{ report_lines }}"
 
-    - name: Assert runner-gh-down is DOWN on the github axis (active + absent)
+    - name: Assert GitHub was queried once per repository, for every page
       vars:
-        v: >-
-          {{ runner_status_results
-             | selectattr('runner', 'equalto', 'runner-gh-down') | first }}
+        logged_before: "{{ (mock_log_before.content | b64decode).splitlines() | length }}"
+        requests: >-
+          {{ (mock_log_after.content | b64decode).splitlines()[logged_before | int:]
+             | map('from_json') | map(attribute='path') | list }}
+        expected_requests:
+          - /repos/example/repo-up/actions/runners?per_page=100&page=1
+          - /repos/example/repo-up/actions/runners?per_page=100&page=2
+          - /repos/example/repo-svc/actions/runners?per_page=100&page=1
+          - /repos/example/repo-svc/actions/runners?per_page=100&page=2
       ansible.builtin.assert:
         that:
-          - v.service_active
-          - v.github_status == 'absent'
-        fail_msg: "runner-gh-down verdict wrong: {{ v }}"
-
-    # Egress is a host property: every verdict carries the same cached
-    # value, and against the dead probe port that value is false for all.
-    # This proves the probe ran on the VM, folded into each verdict, and
-    # never aborted the read-only report.
-    - name: Assert egress_reachable is reported and false (dead probe port)
-      vars:
-        egress_values: >-
-          {{ runner_status_results | map(attribute='egress_reachable') | list }}
-      ansible.builtin.assert:
-        that:
-          - egress_values | length == 3
-          - egress_values | select | list | length == 0
-        fail_msg: "egress_reachable should be false for all runners: {{ egress_values }}"
-
-    - name: Assert every verdict carries the egress diagnosis (stubbed ip, no routes)
-      vars:
-        diagnoses: >-
-          {{ runner_status_results | map(attribute='egress_diagnosis') | unique | list }}
-        expected_diagnosis: >-
-          no-default-gateway: this VM has no default route through a gateway;
-          check its netplan gateway
-      ansible.builtin.assert:
-        that:
-          - diagnoses == [expected_diagnosis]
-        fail_msg: "egress_diagnosis should be no-default-gateway for all runners: {{ diagnoses }}"
+          - requests == expected_requests
+        fail_msg: "GitHub requests wrong: {{ requests }}"
