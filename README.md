@@ -252,6 +252,7 @@ The token is prompted at runtime and never stored. Required scopes:
 | Public | `public_repo` |
 
 The token is used to:
+
 - resolve the latest runner version via the GitHub Releases API,
 - check existing runner registration via the GitHub Runners API,
 - fetch short-lived registration and removal tokens,
@@ -522,7 +523,7 @@ holds its own code **and** tests:
 | **Ansible impl** (Common-Ansible consumer) | `hyper-v/ubuntu/Ansible/` — roles, playbooks, ops wrappers, requirements |
 | **Tooling** | `.github/`, `scripts/`, `ansible.cfg` (lint shim, see below), `.gitattributes`, `docs/` |
 
-```
+```text
 hyper-v/ubuntu/
   shared/                       Used by both impls
     setup-secrets.ps1             Store runner config in the local vault

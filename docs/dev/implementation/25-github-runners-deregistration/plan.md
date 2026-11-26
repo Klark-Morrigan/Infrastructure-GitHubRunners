@@ -1215,7 +1215,7 @@ in line with feature 03's posture toward Vm-Users.
 
 - No automated tests for this step. It is a documentation pointer.
   The merge gate is the E2E suite green on `DeregisterRunnersFlow=ansible`
-  + `RunnersFlow=ansible` for one full cycle (asserted by the
+  plus `RunnersFlow=ansible` for one full cycle (asserted by the
   symmetric `custom-powershell` gate row in this repo's README,
   already in place from steps 6 and 7).
 

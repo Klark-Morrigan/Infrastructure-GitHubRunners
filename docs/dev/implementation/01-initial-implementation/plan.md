@@ -1,6 +1,7 @@
 # Implementation Plan
 
 ## Index
+
 - [Conventions](#conventions)
 - [Step 1 - Repo skeleton](#step-1---repo-skeleton)
 - [Step 2 - setup-secrets.ps1](#step-2---setup-secretsps1)
@@ -42,7 +43,7 @@
 
 **What:** Create the directory structure and placeholder files.
 
-```
+```text
 hyper-v/
 └── ubuntu/
     ├── register-runners.ps1    (empty)
@@ -97,6 +98,7 @@ actually requires them — premature specialisation adds VMs to maintain.
 
 **Config schema** - `u-runner-deploy` credentials only; admin credentials
 are never needed or stored; PAT is prompted at runtime:
+
 ```jsonc
 [
   // Two runners on the same VM: one per purpose.
@@ -159,6 +161,7 @@ sequenceDiagram
 ## Step 3 - register-runners.ps1: vault read + validation
 
 **What:** Opening section of `register-runners.ps1` that:
+
 1. Imports `Common.PowerShell` (install guard, same inline pattern as
    Step 2 — `register-runners.ps1` is run independently so it cannot rely
    on setup-secrets.ps1 having been run in the same session).
@@ -215,6 +218,7 @@ sequenceDiagram
 ## Step 4 - register-runners.ps1: runner install via SSH
 
 **What:** For each reachable VM:
+
 1. Open an SSH connection as `u-runner-deploy` using SSH.NET directly
    (same pattern as `create-users.ps1` in Infrastructure-Vm-Users):
    construct `PasswordAuthenticationMethod` + `ConnectionInfo` +
@@ -281,6 +285,7 @@ sequenceDiagram
 ## Step 5 - register-runners.ps1: registration + service
 
 **What:** For each VM:
+
 1. Check GitHub API for an existing runner with the given name
    (GET `/repos/{owner}/{repo}/actions/runners`, authenticated with
    `Authorization: Bearer {PAT}`). Required PAT scope: `repo` for
@@ -345,6 +350,7 @@ sequenceDiagram
 ## Step 6 - README.md
 
 **What:** Root `README.md` covering:
+
 - Prerequisites (Windows 11, OpenSSH, VMs provisioned,
   Infrastructure-Vm-Users run first).
 - Quick start (setup-secrets -> register-runners).
@@ -361,7 +367,7 @@ sequenceDiagram
   same `vmName` are how you cover multiple repos on one VM, and that
   re-running the script safely adds new runners without disturbing
   existing ones. Include the recommended two-purpose pattern (general CI
-  + `infra`) and its security rationale.
+  plus `infra`) and its security rationale.
 - Repo structure.
 
 **Why:** Required after each step per global instructions; primary
