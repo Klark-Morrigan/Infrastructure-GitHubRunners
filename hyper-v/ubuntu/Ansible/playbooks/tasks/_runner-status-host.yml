@@ -67,49 +67,49 @@
   loop_control:
     loop_var: github_url
 
+# One expression for every runner, not a set_fact loop: at -v a loop prints the
+# whole growing list once per runner.
 - name: Record each runner's verdict
   vars:
-    github: "{{ runner_status_github_by_url[entry.githubUrl] }}"
-    # The matching runner object from the GitHub response, or {} when GitHub
-    # does not list it or the call failed.
-    github_runner: >-
-      {{ github.runners | selectattr('name', 'equalto', entry.runnerName)
-         | first | default({}) }}
-    github_status: >-
-      {{ (github.status != 200)
-         | ternary('query-failed-http-' ~ github.status,
-                   github_runner.status | default('absent')) }}
-    github_busy: "{{ github_runner.busy | default(false) | bool }}"
-    # The unit is actions.runner.<owner-repo>.<runner>.service; matching the
-    # whole last segment keeps runner-up from matching x-runner-up.
-    unit_state: >-
-      {{ runner_status_unit_states | dict2items
-         | selectattr('key', 'search', '\.' ~ (entry.runnerName | regex_escape) ~ '\.service$')
-         | map(attribute='value') | first | default('') }}
-    service_active: "{{ unit_state == 'active' }}"
-    runner_up: "{{ (service_active | bool) and (github_status == 'online') }}"
-    report_line: >-
-      {{ inventory_hostname }}/{{ entry.runnerName }}:
-      {{ (runner_up | bool) | ternary('UP', 'DOWN') }}
-      [service={{ (service_active | bool) | ternary('active', 'inactive') }},
-      github={{ github_status }}{{ (github_busy | bool) | ternary(' (busy)', '') }},
-      egress={{ (runner_status_egress_reachable | bool) | ternary('ok', 'unreachable') }}{{
+    egress_text: >-
+      {{ (runner_status_egress_reachable | bool) | ternary('ok', 'unreachable') }}{{
       (runner_status_egress_diagnosis | length > 0)
-      | ternary(' (' ~ runner_status_egress_diagnosis ~ ')', '') }}]
+      | ternary(' (' ~ runner_status_egress_diagnosis ~ ')', '') }}
   ansible.builtin.set_fact:
-    runner_status_results: >-
-      {{ runner_status_results + [{
-           'vm': inventory_hostname,
-           'runner': entry.runnerName,
-           'up': (runner_up | bool),
-           'service_active': (service_active | bool),
-           'github_status': github_status,
-           'github_busy': (github_busy | bool),
-           'egress_reachable': (runner_status_egress_reachable | bool),
-           'egress_diagnosis': runner_status_egress_diagnosis,
-           'report_line': report_line,
-         }] }}
-  loop: "{{ vm_runner_entries }}"
-  loop_control:
-    loop_var: entry
-    label: "{{ entry.runnerName }}"
+    runner_status_results: |-
+      {%- set verdicts = namespace(list=[]) -%}
+      {%- for entry in vm_runner_entries -%}
+        {%- set github = runner_status_github_by_url[entry.githubUrl] -%}
+        {#- The matching runner object, or {} when GitHub does not list it. -#}
+        {%- set github_runner = github.runners
+              | selectattr('name', 'equalto', entry.runnerName) | first | default({}) -%}
+        {%- set github_status = (github.status != 200)
+              | ternary('query-failed-http-' ~ github.status,
+                        github_runner.status | default('absent')) -%}
+        {%- set github_busy = github_runner.busy | default(false) | bool -%}
+        {#- The unit is actions.runner.<owner-repo>.<runner>.service; matching
+            the whole last segment keeps runner-up from matching x-runner-up. -#}
+        {%- set unit_state = runner_status_unit_states | dict2items
+              | selectattr('key', 'search',
+                           '\.' ~ (entry.runnerName | regex_escape) ~ '\.service$')
+              | map(attribute='value') | first | default('') -%}
+        {%- set service_active = unit_state == 'active' -%}
+        {%- set runner_up = service_active and github_status == 'online' -%}
+        {%- set report_line = inventory_hostname ~ '/' ~ entry.runnerName ~ ': '
+              ~ runner_up | ternary('UP', 'DOWN')
+              ~ ' [service=' ~ service_active | ternary('active', 'inactive')
+              ~ ', github=' ~ github_status ~ github_busy | ternary(' (busy)', '')
+              ~ ', egress=' ~ egress_text ~ ']' -%}
+        {%- set verdicts.list = verdicts.list + [{
+              'vm': inventory_hostname,
+              'runner': entry.runnerName,
+              'up': runner_up,
+              'service_active': service_active,
+              'github_status': github_status,
+              'github_busy': github_busy,
+              'egress_reachable': runner_status_egress_reachable | bool,
+              'egress_diagnosis': runner_status_egress_diagnosis,
+              'report_line': report_line,
+            }] -%}
+      {%- endfor -%}
+      {{- verdicts.list -}}
