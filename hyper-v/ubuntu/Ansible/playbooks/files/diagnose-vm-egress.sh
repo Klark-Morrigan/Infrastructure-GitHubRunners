@@ -16,8 +16,9 @@
 #     uplink at all;
 #   - DNS timing out while a raw IP answers means the router forwards packets
 #     but its upstream DNS, the host's ICS proxy, is silent.
-# The last two are both fixed on the host, by the VM provisioner's network
-# preflight.
+# A name that still resolves proves little on its own: the VM's resolver can
+# answer from its cache after the router lost its uplink, so a failed HTTPS
+# probe is checked against the raw IP too.
 #
 # Always exits 0: the verdict is the output, and a read-only status report
 # must not fail because the network it reports on is down.
@@ -36,8 +37,8 @@ readonly PING_TIMEOUT_SECONDS=2
 readonly DNS_TIMEOUT_SECONDS=2
 readonly HTTPS_TIMEOUT_SECONDS=5
 
-readonly PREFLIGHT_REMEDY='run Test-HostNetworkPreflight.ps1 -AutoRepair on the host'
-readonly PROBE_TOOLS=(ip ping getent nslookup curl)
+readonly PREFLIGHT_REMEDY='run scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
+readonly PROBE_TOOLS=(ip ping timeout getent nslookup curl)
 
 report() {
     printf '%s\n' "$1"
@@ -67,46 +68,69 @@ is_reachable_over_https() {
     curl -sS -o /dev/null -I -k --max-time "${HTTPS_TIMEOUT_SECONDS}" "$1" >/dev/null 2>&1
 }
 
-missingTool="$(find_missing_tool)"
-if [[ -n "${missingTool}" ]]; then
-    report "probe-tool-missing: ${missingTool} is not installed on this VM"
+# Ping alone is not proof: a router may drop ICMP. The ping still makes the
+# kernel resolve the router's MAC address, so an ARP entry that holds one, and
+# has not been marked FAILED or INCOMPLETE, shows the router is there.
+is_gateway_present() {
+
+    local gateway="$1"
+    local neighbour
+
+    if ping -c 1 -W "${PING_TIMEOUT_SECONDS}" "${gateway}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    neighbour="$(ip neigh show "${gateway}" 2>/dev/null)"
+    [[ "${neighbour}" == *lladdr* && "${neighbour}" != *FAILED* && "${neighbour}" != *INCOMPLETE* ]]
+}
+
+missing_tool="$(find_missing_tool)"
+if [[ -n "${missing_tool}" ]]; then
+    report "probe-tool-missing: ${missing_tool} is not installed on this VM"
 fi
 
 gateway="$(read_default_gateway)"
 if [[ -z "${gateway}" ]]; then
-    report 'no-default-route: this VM has no default route; check its netplan gateway'
+    report 'no-default-gateway: this VM has no default route through a gateway; check its netplan gateway'
 fi
 
-if ! ping -c 1 -W "${PING_TIMEOUT_SECONDS}" "${gateway}" >/dev/null 2>&1; then
+if ! is_gateway_present "${gateway}"; then
     report "gateway-unreachable: router ${gateway} does not answer; start the router VM or check this VM's switch"
 fi
 
-if getent hosts "${PROBE_HOST}" >/dev/null 2>&1; then
+readonly UPLINK_DOWN_VERDICT="router-uplink-down: router ${gateway} has no way out; ${PREFLIGHT_REMEDY}"
+
+# getent has no timeout of its own, and a resolver with a dead upstream can
+# stall it far longer than every other probe here.
+if timeout "${DNS_TIMEOUT_SECONDS}" getent hosts "${PROBE_HOST}" >/dev/null 2>&1; then
     if is_reachable_over_https "https://${PROBE_HOST}"; then
         report 'ok'
+    fi
+    if ! is_reachable_over_https "https://${RAW_IP}"; then
+        report "${UPLINK_DOWN_VERDICT}"
     fi
     report "https-failed: ${PROBE_HOST} resolves but HTTPS fails; check filtering past the router"
 fi
 
 # The VM's resolver failed, so ask the router directly to tell its failure
 # modes apart.
-routerAnswer="$(nslookup -timeout="${DNS_TIMEOUT_SECONDS}" -retry=0 "${PROBE_HOST}" "${gateway}" 2>&1)"
-routerExitCode=$?
+router_answer="$(nslookup -timeout="${DNS_TIMEOUT_SECONDS}" -retry=0 "${PROBE_HOST}" "${gateway}" 2>&1)"
+router_exit_code=$?
 
-if [[ ${routerExitCode} -eq 0 ]]; then
+if [[ ${router_exit_code} -eq 0 ]]; then
     report "vm-resolver-misconfigured: router ${gateway} answers DNS but this VM's resolver does not; check its netplan nameservers"
 fi
 
-if [[ "${routerAnswer}" == *refused* ]]; then
+if [[ "${router_answer}" == *refused* ]]; then
     report "router-dns-refused: router ${gateway} refuses DNS; restart dnsmasq on the router VM"
 fi
 
-if [[ "${routerAnswer}" == *'timed out'* || "${routerAnswer}" == *'no servers could be reached'* ]]; then
+if [[ "${router_answer}" == *'timed out'* || "${router_answer}" == *'no servers could be reached'* ]]; then
     if is_reachable_over_https "https://${RAW_IP}"; then
         report "router-upstream-dns-silent: router ${gateway} forwards traffic but its upstream DNS is silent; ${PREFLIGHT_REMEDY}"
     fi
-    report "router-uplink-down: router ${gateway} has no way out; ${PREFLIGHT_REMEDY}"
+    report "${UPLINK_DOWN_VERDICT}"
 fi
 
-firstLine="${routerAnswer%%$'\n'*}"
-report "router-dns-error: router ${gateway} answered DNS with an error: ${firstLine}"
+first_line="${router_answer%%$'\n'*}"
+report "router-dns-error: router ${gateway} answered DNS with an error: ${first_line}"
