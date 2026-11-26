@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Shared fixtures for every Tests/ops/*.bats file. Sourced from each
-# *.bats with:
-#   source "${BATS_TEST_DIRNAME}/_bats-helpers.sh"
+# Shared fixtures for every *.bats suite under Tests/. Sourced from each
+# suite by its path relative to the suite, such as:
+#   source "${BATS_TEST_DIRNAME}/../_bats-helpers.sh"
 #
 # Two reasons the absolute-bash + mktemp+rm-rf skeleton lives here
 # rather than being duplicated per file:
-#   - BASH_BIN: every script under ops/ is invoked via "${BASH_BIN}"
+#   - BASH_BIN: every script under test is invoked via "${BASH_BIN}"
 #     rather than `bash` so the test harness survives an Alpine bats
 #     image whose PATH does not include /bin/bash. Capturing it once
 #     at the helper layer keeps every bats file robust to the

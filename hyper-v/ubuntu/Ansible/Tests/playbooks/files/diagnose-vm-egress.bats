@@ -13,8 +13,8 @@
 
 SCRIPT="$(cd "${BATS_TEST_DIRNAME}/../../../playbooks/files" && pwd)/diagnose-vm-egress.sh"
 
-# shellcheck source=hyper-v/ubuntu/Ansible/Tests/ops/_bats-helpers.sh
-source "${BATS_TEST_DIRNAME}/../../ops/_bats-helpers.sh"
+# shellcheck source=hyper-v/ubuntu/Ansible/Tests/_bats-helpers.sh
+source "${BATS_TEST_DIRNAME}/../../_bats-helpers.sh"
 
 # Writes one stub command whose body is the rest of the arguments.
 _write_stub() {
