@@ -39,9 +39,9 @@
 
 # A bare "unreachable" leaves the operator to walk the path out by hand,
 # across the VM, the router VM and the Windows host; the script walks it.
-# The TTY is off because a TTY folds the script's probe log on stderr into its
-# stdout. The verdict is the script's last line either way, so it is read from
-# there.
+# It prints its probe log and then the verdict, all on stdout, because stderr
+# also carries the SSH client's own debug output. The TTY is off so stdout
+# arrives as printed: a TTY would fold the script's stderr into it.
 - name: Diagnose the VM's egress hop by hop
   ansible.builtin.script:
     cmd: ../files/diagnose-vm-egress.sh
@@ -57,9 +57,9 @@
 
 - name: Show the probe log behind the egress diagnosis
   ansible.builtin.debug:
-    var: runner_status_egress_walk.stderr_lines
+    msg: "{{ runner_status_egress_walk.stdout_lines[:-1] }}"
     verbosity: 1
-  when: runner_status_egress_walk.stderr_lines is defined
+  when: runner_status_egress_walk.stdout_lines is defined
 
 - name: Record the egress diagnosis
   vars:
