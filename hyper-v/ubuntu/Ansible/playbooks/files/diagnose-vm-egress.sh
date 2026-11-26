@@ -25,9 +25,10 @@
 # Always exits 0: the verdict is the output, and a read-only status report
 # must not fail because the network it reports on is down.
 #
-# The verdict is the only line on stdout. Each probe's exit code and last line
-# of output go to stderr, one line per probe, so the evidence behind a verdict
-# can be shown without cluttering it.
+# Prints one line per probe, its exit code and the last line of its output,
+# then the verdict as the last line, so a caller can show the evidence behind
+# a verdict. All of it goes to stdout: over SSH, stderr also carries the SSH
+# client's own debug output, which would bury the probe lines.
 #
 # Usage: diagnose-vm-egress.sh [host] [raw-ip]
 #   host    name to resolve and reach over HTTPS (default: api.github.com)
@@ -71,7 +72,7 @@ report_uplink_down() {
 
 log_probe_result() {
 
-    printf '%s\n' "$1" >&2
+    printf '%s\n' "$1"
 }
 
 # Runs one probe command and logs its exit code and the last line it printed.

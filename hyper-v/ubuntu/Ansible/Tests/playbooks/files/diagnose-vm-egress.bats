@@ -11,8 +11,10 @@
 # <command>.sh; setup() installs each under its command name with its shebang
 # swapped for bash's absolute path, so the missing-tool case can strip PATH
 # down to the stub folder alone.
-# Every case runs with --separate-stderr: the verdict is stdout alone, and the
-# probe log on stderr is asserted on its own.
+# The script prints its probe log and then the verdict, all on stdout: verdict
+# cases read the last line, log cases every line before it. Every case runs
+# with --separate-stderr, so anything the script wrongly sends to stderr
+# cannot pass for stdout.
 # Run with: bats Tests/playbooks/files/diagnose-vm-egress.bats
 
 # run --separate-stderr arrived in 1.5.0.
@@ -80,7 +82,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports no-default-gateway when the VM has no default route" {
@@ -94,7 +96,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports no-default-gateway when the default route names no gateway" {
@@ -108,7 +110,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports gateway-unreachable, naming the gateway, when it answers neither ping nor its DNS port" {
@@ -123,7 +125,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # A router that drops ICMP is still there: only a live host refuses a connection.
@@ -139,7 +141,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "carries on past a gateway that drops ping but accepts on its DNS port" {
@@ -153,7 +155,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # A lookup on a stalled resolver must not hold the report up.
@@ -168,7 +170,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports vm-resolver-misconfigured when the router answers DNS but the VM's resolver fails" {
@@ -182,7 +184,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports router-dns-refused when the router refuses DNS" {
@@ -197,7 +199,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports router-uplink-down when DNS times out and a raw IP is unreachable" {
@@ -213,7 +215,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports router-upstream-dns-silent when DNS times out but a raw IP answers" {
@@ -228,7 +230,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # A certificate rejection still proves the path: the handshake reached a server.
@@ -245,7 +247,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # nslookup can report an unanswered query this way alone, without "timed out".
@@ -261,7 +263,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # The answer opens with nslookup's Server header, so the error is its last line.
@@ -277,7 +279,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports https-failed when the name resolves and a raw IP answers but HTTPS fails" {
@@ -291,7 +293,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports https-failed when HTTPS fails and a raw IP rejects its certificate" {
@@ -306,7 +308,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # A wrong clock or TLS interception fails the runner's own connections too.
@@ -321,7 +323,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # The VM's resolver can answer from its cache after the router lost its uplink.
@@ -337,7 +339,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 @test "reports probe-tool-missing when a probe command is not installed" {
@@ -353,7 +355,7 @@ teardown() {
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${output}" = "${expected}" ]
+    [ "${lines[-1]}" = "${expected}" ]
 }
 
 # The probe checks certificates as the runner does: no -k.
@@ -386,7 +388,9 @@ teardown() {
     [ "$(cat "${CURL_LOG}")" = "${expectedCurlCalls}" ]
 }
 
-@test "logs each probe it runs to stderr on a healthy path" {
+# Over SSH, stderr also carries the SSH client's debug output, so the probe log
+# must stay on stdout.
+@test "logs each probe it runs to stdout, ahead of the verdict, on a healthy path" {
 
     # ARRANGE
     expectedLog='gateway: 10.10.0.1
@@ -399,7 +403,8 @@ curl https://api.github.com: exit 0'
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${stderr}" = "${expectedLog}" ]
+    [ "${output%$'\n'*}" = "${expectedLog}" ]
+    [ -z "${stderr}" ]
 }
 
 @test "logs the DNS-port connect, the router's DNS answer and the raw-IP probe when DNS times out" {
@@ -422,7 +427,7 @@ curl https://1.1.1.1: exit 28'
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${stderr}" = "${expectedLog}" ]
+    [ "${output%$'\n'*}" = "${expectedLog}" ]
 }
 
 @test "logs a silent DNS port as a timeout" {
@@ -439,7 +444,7 @@ tcp 10.10.0.1:53: exit 124'
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${stderr}" = "${expectedLog}" ]
+    [ "${output%$'\n'*}" = "${expectedLog}" ]
 }
 
 @test "logs no gateway as none" {
@@ -453,5 +458,5 @@ tcp 10.10.0.1:53: exit 124'
 
     # ASSERT
     [ "${status}" -eq 0 ]
-    [ "${stderr}" = "${expectedLog}" ]
+    [ "${output%$'\n'*}" = "${expectedLog}" ]
 }
