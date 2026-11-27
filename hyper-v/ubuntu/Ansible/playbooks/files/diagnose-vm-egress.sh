@@ -54,7 +54,7 @@ readonly CURL_EXIT_CERT_REJECTED=60
 
 # Both host-side verdicts name a VPN first. One that holds the host's default
 # route takes the traffic ICS forwards, so the router has no way out while the
-# host itself is online, and the preflight neither detects nor repairs that.
+# host itself is online. The preflight reports that but cannot repair it.
 readonly HOST_REMEDY='check the host for a VPN holding its default route, which ICS cannot share;'\
 ' if none, run .\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair from Infrastructure-Vm-Provisioner on the host'
 readonly PROBE_TOOLS=(ip ping timeout getent nslookup curl)
