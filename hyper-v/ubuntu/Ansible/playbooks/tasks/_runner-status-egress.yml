@@ -1,0 +1,71 @@
+---
+# Host-level egress probe, included once per host by _runner-status-host.yml
+# after its SSH check (runner_status_vm_reachable). Sets two facts that every
+# runner's verdict carries. Both are diagnostic context only: neither changes
+# a runner's UP/DOWN verdict.
+#
+#   runner_status_egress_reachable - whether the VM itself can reach GitHub.
+#     The github_status query runs controller-side, so it is blind to the VM's
+#     own egress. A runner that reads [service=active, github=offline] is
+#     offline because its listener cannot hold its session, and the usual
+#     cause is the VM having no path out rather than a stale listener.
+#   runner_status_egress_diagnosis - when egress fails, the first broken hop
+#     on the VM's path out and its remedy, from files/diagnose-vm-egress.sh.
+#     A vm-unreachable line when SSH to the VM failed, so nothing was probed.
+#     Empty when egress works.
+#
+# Every task is read-only and never fatal, so a down network or a down VM
+# still yields a report.
+
+# HEAD against the GitHub API root: any HTTP response (200/301/401/403/404)
+# proves DNS, routing and TLS worked. A connect timeout or DNS failure leaves
+# uri's status at -1, which reads as unreachable.
+- name: Probe the VM's egress to GitHub
+  ansible.builtin.uri:
+    url: "{{ runner_egress_probe_url | default('https://api.github.com') }}"
+    method: HEAD
+    timeout: 10
+    status_code: [200, 301, 302, 401, 403, 404]
+  register: runner_status_egress_probe
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when: runner_status_vm_reachable | bool
+
+- name: Record whether the VM reaches GitHub
+  ansible.builtin.set_fact:
+    runner_status_egress_reachable: >-
+      {{ (runner_status_egress_probe.status | default(-1) | int) > 0 }}
+
+# A bare "unreachable" leaves the operator to walk the path out by hand,
+# across the VM, the router VM and the Windows host; the script walks it.
+# It prints its probe log and then the verdict, all on stdout, because stderr
+# also carries the SSH client's own debug output. The TTY is off so stdout
+# arrives as printed: a TTY would fold the script's stderr into it.
+- name: Diagnose the VM's egress hop by hop
+  ansible.builtin.script:
+    cmd: ../files/diagnose-vm-egress.sh
+  vars:
+    ansible_ssh_use_tty: false
+  register: runner_status_egress_walk
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - runner_status_vm_reachable | bool
+    - not (runner_status_egress_reachable | bool)
+
+- name: Show the probe log behind the egress diagnosis
+  ansible.builtin.debug:
+    msg: "{{ runner_status_egress_walk.stdout_lines[:-1] }}"
+    verbosity: 1
+  when: runner_status_egress_walk.stdout_lines is defined
+
+- name: Record the egress diagnosis
+  vars:
+    vm_unreachable_diagnosis: 'vm-unreachable: SSH to this VM failed, so its egress was not probed'
+  ansible.builtin.set_fact:
+    runner_status_egress_diagnosis: >-
+      {{ (runner_status_vm_reachable | bool)
+         | ternary(runner_status_egress_walk.stdout_lines | default([]) | last | default(''),
+                   vm_unreachable_diagnosis) }}

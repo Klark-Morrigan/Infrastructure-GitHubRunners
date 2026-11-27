@@ -7,18 +7,23 @@
 #
 # Each line also reports egress=ok|unreachable: whether the VM itself can
 # reach GitHub. It is diagnostic context only (it does not flip UP/DOWN) -
-# its job is to disambiguate a [service=active, github=offline] runner: with
-# egress unreachable the VM has no path out (router / DNS); with egress ok
-# the listener is merely stale and a service restart should reconnect it.
+# its job is to disambiguate a [service=active, github=offline] runner. With
+# egress ok the listener is merely stale and a service restart should
+# reconnect it. With egress unreachable the line also names the first broken
+# hop on the VM's path out and its remedy, such as
+#   egress=unreachable (router-uplink-down: router 10.10.0.1 has no way out; ...)
+# Run with -v to see the raw probe results behind that hop.
 #
 # The report is informational: a DOWN runner is a normal result, not an
 # error, so the run still exits 0 - only an actual error (missing
 # github_token, an unreachable controller, a malformed config) fails it.
-# Each runner's line is coloured green (UP) or red (DOWN).
+# Each runner's line is coloured green (UP) or red (DOWN). The verdicts and
+# their lines come from tasks/_runner-status-host.yml, which the molecule
+# scenario runs too, so this play only prints them.
 #
-# gather_facts: false - the per-runner systemd probe is the reachability
-# signal we need, and it carries ignore_unreachable so a down VM yields a
-# clean DOWN verdict rather than aborting the host before the GitHub side
+# gather_facts: false - the per-host SSH check is the reachability signal we
+# need, and it carries ignore_unreachable so a down VM yields a clean DOWN
+# verdict rather than aborting the host before the GitHub side
 # (delegate_to: localhost) can be reported.
 
 - name: Report GitHub Actions runner status (on-VM service + GitHub-side)
@@ -44,30 +49,12 @@
       ansible.builtin.include_role:
         name: runner_entry_resolve
 
-    - name: Initialise the per-host status accumulator
-      ansible.builtin.set_fact:
-        runner_status_results: []
-
-    - name: Probe each declared runner's status
-      ansible.builtin.include_tasks: tasks/_runner-status-one.yml
-      loop: "{{ vm_runner_entries }}"
-      loop_control:
-        loop_var: entry
-        label: "{{ entry.runnerName }}"
+    - name: Probe this host's runners
+      ansible.builtin.include_tasks: tasks/_runner-status-host.yml
 
     - name: Report each runner's status (green = UP, red = DOWN)
-      vars:
-        runner_up: "{{ item.service_active and (item.github_status == 'online') }}"
       ansible.builtin.debug:
-        msg: >-
-          {{ (runner_up | bool) | ternary(ansi_green, ansi_red)
-          }}{{ item.vm }}/{{ item.runner }}:
-          {{ (runner_up | bool) | ternary('UP', 'DOWN') }}
-          [service={{ item.service_active | ternary('active', 'inactive') }},
-          github={{ item.github_status }}{{ item.github_busy
-          | ternary(' (busy)', '') }},
-          egress={{ item.egress_reachable | ternary('ok', 'unreachable') }}]{{
-          ansi_reset }}
+        msg: "{{ item.up | ternary(ansi_green, ansi_red) }}{{ item.report_line }}{{ ansi_reset }}"
       loop: "{{ runner_status_results }}"
       loop_control:
         label: "{{ item.runner }}"
@@ -76,10 +63,7 @@
     # point of the check). This coloured count is the at-a-glance summary.
     - name: Summarise UP / DOWN counts
       vars:
-        runners_up: >-
-          {{ runner_status_results
-             | selectattr('service_active')
-             | selectattr('github_status', 'equalto', 'online') | list }}
+        runners_up: "{{ runner_status_results | selectattr('up') | list }}"
       ansible.builtin.debug:
         msg: >-
           {{ ansi_green }}{{ runners_up | length }} UP{{ ansi_reset }},

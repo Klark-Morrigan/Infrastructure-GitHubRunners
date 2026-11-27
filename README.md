@@ -21,6 +21,11 @@ provisioned by
 - [Deregistration](#deregistration)
 - [Timing instrumentation (E2E opt-in)](#timing-instrumentation-e2e-opt-in)
 - [Ansible runner flow (Common-Ansible substrate)](#ansible-runner-flow-common-ansible-substrate)
+  - [Layout](#layout)
+  - [Consuming Common-Ansible](#consuming-common-ansible)
+  - [Reading the runner status report](#reading-the-runner-status-report)
+    - [Egress verdicts](#egress-verdicts)
+  - [Reaching the substrate host file server](#reaching-the-substrate-host-file-server)
 - [CI and linting](#ci-and-linting)
 - [Repo structure](#repo-structure)
 
@@ -198,7 +203,8 @@ The two answer different questions and neither replaces the other:
 | Shape | One-shot report | Repaints every few seconds |
 | Cost | Minutes, one SSH session per VM | Seconds, no VM contact |
 
-Reach for `runner-status.sh` when a runner is down and you need to know why;
+Reach for `runner-status.sh` when a runner is down and you need to know why
+(see [Reading the runner status report](#reading-the-runner-status-report));
 reach for the dashboard when you want to watch work flow through the fleet.
 
 ### Rate limit
@@ -252,6 +258,7 @@ The token is prompted at runtime and never stored. Required scopes:
 | Public | `public_repo` |
 
 The token is used to:
+
 - resolve the latest runner version via the GitHub Releases API,
 - check existing runner registration via the GitHub Runners API,
 - fetch short-lived registration and removal tokens,
@@ -397,9 +404,9 @@ below are relative to that slice.
 | Kind | Here | Purpose |
 |---|---|---|
 | Roles | `roles/runner_entry_resolve`, `roles/runner_binary`, `roles/runner_registration`, `roles/runner_service` | Resolve a host's runner entries; cache/extract the tarball; reconcile GitHub registration; install the systemd unit and deliver `/etc/environment` to it |
-| Playbooks | `playbooks/register-runners.yml`, `playbooks/deregister-runners.yml`, `playbooks/runner-status.yml` (+ `playbooks/tasks/`) | Compose the roles per direction |
-| Wrappers | `ops/register-runners.sh`, `ops/deregister-runners.sh`, `ops/runner-status.sh` (+ `.bat`) | Operator entry points |
-| Domain helpers | `ops/_build-extra-vars-GitHubRunners.sh`, `ops/_require-gh-token.sh`, `ops/_stage-runner-tarball.sh`, `ops/_resolve-runner-version.ps1`, `ops/_ensure-runner-tarball.ps1` | Runner-domain extra-vars, token acquisition, tarball staging |
+| Playbooks | `playbooks/register-runners.yml`, `playbooks/deregister-runners.yml`, `playbooks/runner-status.yml` (+ `playbooks/tasks/`, `playbooks/files/`) | Compose the roles per direction; the status play's per-host steps and the on-VM egress diagnosis script |
+| Wrappers | `ops/register-runners.sh`, `ops/deregister-runners.sh` (+ `.bat`), `ops/runner-status.sh` | Operator entry points |
+| Domain helpers | `ops/_build-extra-vars-GitHubRunners.sh`, `ops/_require-gh-token.sh`, `ops/_stage-runner-tarball.sh`, `ops/_decode-json-escapes.sh`, `ops/_resolve-runner-version.ps1`, `ops/_ensure-runner-tarball.ps1` | Runner-domain extra-vars, token acquisition, tarball staging, status report decoding |
 
 The runner config secret is **not** Ansible-specific: both this Ansible flow
 and the PowerShell orchestrators read the same `GitHubRunnersConfig-<Suffix>`
@@ -437,11 +444,83 @@ cd hyper-v/ubuntu/Ansible
 # Bootstrap the controller once (reuses the Common-Ansible venv).
 ops/bootstrap-controller.sh        # or double-click ops\bootstrap-controller.bat
 
+# The bridge reads the vault secrets stored under this lifecycle label.
+export SECRET_SUFFIX=Production
+
 # Register / status / deregister (each prompts for a GitHub token).
 ops/register-runners.sh
 ops/runner-status.sh
 ops/deregister-runners.sh           # add --force to clear unreachable VMs via the API
 ```
+
+### Reading the runner status report
+
+`ops/runner-status.sh` changes nothing.
+It prints one line per declared runner, green for UP and red for DOWN, then a count:
+
+```text
+ubuntu-02-ci/ci-runner: DOWN [service=active, github=offline, egress=unreachable (router-uplink-down: router 10.10.0.1 has no way out; ...)]
+0 UP, 1 DOWN of 1 declared runner(s).
+```
+
+A runner is UP when its systemd unit is active and GitHub shows it online.
+A DOWN runner is a normal result, so the run still exits 0.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `service` | `active`, `inactive` | The runner's systemd unit on the VM. |
+| `github` | `online`, `offline`, `absent`, `query-failed-http-N` | GitHub's view of the runner, asked from the controller. `absent`: GitHub does not list it. `query-failed-http-N`: the API call itself failed, such as `401` for a rejected token. A `(busy)` suffix follows while the runner works a job. |
+| `egress` | `ok`, `unreachable` | Whether the VM itself can reach GitHub. Context only: it never changes UP or DOWN. |
+
+`egress` is what tells two DOWN runners apart when both read `service=active, github=offline`.
+With `egress=ok` the listener is stale, and restarting the runner's service reconnects it.
+With `egress=unreachable` the VM has no path out, and the parentheses say where it breaks.
+
+Two options narrow or widen a run:
+
+- `--limit <vm-name>` checks one VM.
+- `-v` also prints the probe log behind an egress verdict.
+
+#### Egress verdicts
+
+When the egress check fails, the play runs `playbooks/files/diagnose-vm-egress.sh` on the VM.
+It walks the path out, from the VM through the router VM to the Windows host,
+and names the first hop that fails, with its fix.
+The router VM is not in the play's inventory, so its side is inferred from the workload VM.
+
+| Verdict | What is wrong | Fix |
+|---|---|---|
+| `vm-unreachable` | SSH to the VM failed, so nothing was probed. | Start the VM, or check the router VM it is reached through. |
+| `probe-tool-missing` | A probe tool is not installed on the VM: `ip`, `ping`, `timeout`, `getent`, `nslookup` or `curl`. | Install the tool the verdict names. |
+| `no-default-gateway` | The VM has no default route through a gateway. | Check its netplan gateway. |
+| `gateway-unreachable` | The router answers neither ping nor a connection to its DNS port. | Start the router VM, or check the VM's switch. |
+| `vm-resolver-misconfigured` | The router answers DNS, and the VM's own resolver does not. | Check systemd-resolved and the VM's netplan nameservers. |
+| `router-dns-refused` | The router refuses DNS. | Restart dnsmasq on the router VM. |
+| `router-upstream-dns-silent` | The router forwards traffic, and its upstream DNS, the host's ICS proxy, is silent. | The host fix below. |
+| `router-uplink-down` | The router has no way out at all. | The host fix below. |
+| `router-dns-error` | The router answered DNS with an error, quoted in the verdict. | Follow the quoted error. |
+| `https-cert-rejected` | GitHub answers, and its certificate is rejected. | Check the VM's clock, and any TLS interception past the router. |
+| `https-failed` | The name resolves and a raw IP answers, yet HTTPS to GitHub fails. | Check filtering past the router. |
+| `transient` | Every hop answers now; the failure did not repeat. | Run the report again. Nothing to fix if it stays clear. |
+
+**The host fix.** Two verdicts point at the Windows host.
+Look for a VPN first: one that holds the host's default route takes the traffic ICS forwards,
+so the VMs lose their way out while the host itself stays online.
+With no VPN in the way, run `.\scripts\Test-HostNetworkPreflight.ps1 -AutoRepair` from Infrastructure-Vm-Provisioner.
+That preflight reports the VPN case too, and cannot repair it.
+
+**The probe log.** Under `-v` each probe shows its exit code and the last line it printed:
+
+```text
+gateway: 10.10.0.1
+ping 10.10.0.1: exit 0: rtt min/avg/max/mdev = 0.284/0.284/0.284/0.000 ms
+getent api.github.com: exit 124
+nslookup api.github.com via 10.10.0.1: exit 1: ;; no servers could be reached
+curl https://1.1.1.1: exit 28: curl: (28) Connection timed out after 5002 milliseconds
+```
+
+Here the router answers ping, the VM's own lookup outlasts its timeout (exit 124),
+the router's DNS reaches no server, and a raw public IP is out of reach: `router-uplink-down`.
 
 ### Reaching the substrate host file server
 
@@ -503,7 +582,7 @@ scripts/fix-permissions.sh     # or scripts\fix-permissions.bat
 ```
 
 All three runners are thin shims over Common-Automation's engine, pointed at
-this repo via the `COMMON_AUTOMATION_TARGET_REPO` env var, so a sibling
+this repo via the `CONSUMER_REPO_PATH` env var, so a sibling
 checkout at `..\Common-Automation` is required. `.gitattributes` pins `*.sh`
 to LF and `*.bat` to CRLF - Linux CI runners reject CRLF shebangs.
 
@@ -522,7 +601,7 @@ holds its own code **and** tests:
 | **Ansible impl** (Common-Ansible consumer) | `hyper-v/ubuntu/Ansible/` — roles, playbooks, ops wrappers, requirements |
 | **Tooling** | `.github/`, `scripts/`, `ansible.cfg` (lint shim, see below), `.gitattributes`, `docs/` |
 
-```
+```text
 hyper-v/ubuntu/
   shared/                       Used by both impls
     setup-secrets.ps1             Store runner config in the local vault
@@ -551,15 +630,20 @@ hyper-v/ubuntu/
       _build-extra-vars-GitHubRunners.sh  Runner-domain extra-vars fragment
       _stage-runner-tarball.sh        Resolve runner version + cache the tarball Windows-side
       _require-gh-token.sh            GitHub PAT acquisition (per-invocation, never vaulted)
+      _decode-json-escapes.sh         Decode the JSON escapes in the status report's output
       _resolve-runner-version.ps1  _ensure-runner-tarball.ps1   Runner version/tarball helpers
       imports/                        Cross-repo resolvers (Common-Ansible + Common-Automation)
-    playbooks/                    register/deregister/runner-status.yml + tasks/
+    playbooks/                    register/deregister/runner-status.yml
+      tasks/                          Status play's per-host steps: SSH check, egress, units, GitHub
+      files/diagnose-vm-egress.sh     On-VM walk naming the first broken hop out and its remedy
     roles/                        runner_entry_resolve, runner_binary, runner_registration, runner_service
     requirements.yml              Galaxy collections (molecule + bootstrap)
     Tests/
-      molecule/                     Molecule scenarios per runner role (Docker driver)
+      molecule/                     Molecule scenarios per runner role + runner_status (Docker driver)
       ops/                          Bats for the operator wrappers + helpers
+      playbooks/files/              Bats for the egress diagnosis script + its probe-tool stubs
       ansible/                      Controller-only playbook smoke test + fixture inventory
+      _bats-helpers.sh              Shared bats fixtures (bash path, scratch dir, logger stubs)
       mock-github-api.py            Shared mock GitHub API for the runner-side tests
 ansible.cfg                     Lint shim: keeps the fleet ansible-lint gate active for the
                                 nested Ansible slice (roles_path -> hyper-v/ubuntu/Ansible/roles).

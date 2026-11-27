@@ -1,10 +1,11 @@
 # Implementation Plan
 
 ## Index
+
 - [Prerequisites](#prerequisites)
 - [Conventions](#conventions)
 - [Step 1 - Restructure existing folders](#step-1---restructure-existing-folders)
-- [Step 2 - Invoke-GitHubRunnersApi](#step-2---invoke-githubrunnerapi)
+- [Step 2 - Invoke-GitHubRunnersApi](#step-2---invoke-githubrunnersapi)
 - [Step 3 - Remove-GitHubRunner](#step-3---remove-githubrunner)
 - [Step 4 - Remove-RunnerService](#step-4---remove-runnerservice)
 - [Step 5 - Invoke-RunnerConfigRemove](#step-5---invoke-runnerconfigremove)
@@ -38,7 +39,7 @@
 - Tests mirror the production structure under `Tests/`.
 - Every step is committed and reviewed independently before proceeding.
 - `README.md` is updated as part of every step - not deferred to the end.
-- See [feature 01 conventions](../01%20-%20initial%20implementation/plan.md#conventions)
+- See [feature 01 conventions](../01-initial-implementation/plan.md#conventions)
   for SSH, mocking, and test structure rules.
 
 ---
@@ -107,6 +108,7 @@ Returns the raw `Invoke-RestMethod` response. Callers extract the fields
 they need (`.token`, `.runners`, etc.) or ignore the body (DELETE).
 
 As part of this step:
+
 - `Get-GitHubRunnerRegistration` is refactored to call
   `Invoke-GitHubRunnersApi` instead of `Invoke-RestMethod` directly.
 - `New-RunnerRegistrationToken` is deleted; its call is inlined into
@@ -116,6 +118,7 @@ As part of this step:
   `Invoke-GitHubRunnersApi` directly.
 
 **Tests:** `Tests/registration/common/github/Invoke-GitHubRunnersApi.Tests.ps1`
+
 - Constructs the correct URI from `GithubUrl` and `Suffix`.
 - Passes the correct `Authorization` and `User-Agent` headers.
 - Passes the correct `Method` (defaults to `Get`).
@@ -158,6 +161,7 @@ ID from `Get-GitHubRunnerRegistration`. 404 is treated as success
 (idempotency). Owner and repo are parsed from `GithubUrl`.
 
 **Tests:** `Tests/registration/down/github/Remove-GitHubRunner.Tests.ps1`
+
 - Calls the DELETE endpoint with the correct runner ID and auth header.
 - Does not throw on 404 (already removed).
 - Propagates non-404 errors.
@@ -199,6 +203,7 @@ Neither a stopped service nor an absent unit is an error - both are
 expected in partial-cleanup re-runs.
 
 **Tests:** `Tests/registration/down/service/Remove-RunnerService.Tests.ps1`
+
 - Stops the service when active; skips when already inactive.
 - Uninstalls the unit when it exists; skips when absent.
 - Runs `svc.sh uninstall` from the runner directory (working directory
@@ -243,6 +248,7 @@ Only called when the runner is confirmed present on GitHub. The caller
 output or error message.
 
 **Tests:** `Tests/registration/down/registration/Invoke-RunnerConfigRemove.Tests.ps1`
+
 - Fetches a removal token before calling config.sh.
 - Calls config.sh with the correct token, runner user, and `--unattended`.
 - Throws when config.sh exits non-zero.
@@ -277,6 +283,7 @@ leftover cleanup guarantee that ensures the next registration starts from
 a clean slate.
 
 **Tests:** `Tests/registration/down/binary/Remove-RunnerFiles.Tests.ps1`
+
 - Removes the directory when it exists.
 - Does not throw when the directory is already absent.
 
@@ -318,6 +325,7 @@ The GitHub check (step 2) drives step 3 explicitly - no inferring
 registration state from the filesystem.
 
 **Tests:** `Tests/registration/down/Invoke-VmDeregisterGroup.Tests.ps1`
+
 - Always calls `Remove-RunnerService`.
 - Calls `Invoke-RunnerConfigRemove` when runner is registered on GitHub.
 - Does not call `Invoke-RunnerConfigRemove` when runner is absent on GitHub.

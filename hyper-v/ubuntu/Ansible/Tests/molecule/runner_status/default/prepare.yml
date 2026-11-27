@@ -2,11 +2,16 @@
 # Prepare:
 #   controller - launch the shared mock GitHub API. Registered set =
 #     runner-up + runner-svc-down (GitHub reports them online); runner-gh-down
-#     is deliberately absent so the github axis reads 'absent'.
+#     is deliberately absent so the github axis reads 'absent'. A hundred
+#     filler runners sit between the two, so runner-svc-down is on the second
+#     page and reads online only if the play pages.
 #   container  - install a stub systemctl ahead of the real one on PATH plus
 #     two fixture files that drive which runners have a unit and which units
 #     are active, so the scenario controls the on-VM service axis without
-#     real systemd.
+#     real systemd. Also stub the egress diagnosis's probe tools, so its
+#     verdict is fixed by the scenario rather than by the image or the
+#     container's network, and start a local HTTP listener for the egress
+#     probe's reachable case.
 
 - name: Prepare controller - launch mock GitHub API
   hosts: localhost
@@ -28,6 +33,9 @@
         dest: "{{ mock_registered_file }}"
         content: |
           runner-up
+          {% for filler in range(1, 101) %}
+          filler-{{ filler }}
+          {% endfor %}
           runner-svc-down
         mode: "0644"
 
@@ -66,7 +74,8 @@
 
     # /usr/local/bin precedes /usr/bin on root's PATH, so this shadows the
     # real systemctl for the play's `systemctl list-unit-files` /
-    # `systemctl is-active` reads. It honours only those two verbs.
+    # `systemctl is-active` reads. It honours only those two verbs, and lists
+    # every present runner's unit whatever glob it is given.
     - name: Install the stub systemctl ahead of the real one on PATH
       ansible.builtin.copy:
         dest: /usr/local/bin/systemctl
@@ -77,12 +86,9 @@
           fixture=/etc/runner-status-fixture
           case "${1:-}" in
             list-unit-files)
-              glob="${@: -1}"               # actions.runner.*<name>.service
-              name="${glob#actions.runner.\*}"
-              name="${name%.service}"
-              if grep -qxF "${name}" "${fixture}/units-present" 2>/dev/null; then
+              while read -r name; do
                 printf 'actions.runner.example-%s.%s.service enabled enabled\n' "${name}" "${name}"
-              fi
+              done <"${fixture}/units-present"
               exit 0
               ;;
             is-active)
@@ -95,3 +101,40 @@
               ;;
             *) exit 0 ;;
           esac
+
+    # An ip that reports no routes makes playbooks/files/diagnose-vm-egress.sh
+    # stop at its first hop with no-default-gateway. The other probe tools only
+    # need to exist for its tool check; getent and timeout are real.
+    - name: Install a stub ip that reports no routes
+      ansible.builtin.copy:
+        dest: /usr/local/bin/ip
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exit 0
+
+    - name: Install stub probe tools the diagnosis never reaches
+      ansible.builtin.copy:
+        dest: "/usr/local/bin/{{ item }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          exit 1
+      loop: [ping, nslookup, curl]
+
+    # The egress probe runs on the container, so a listener on its own
+    # loopback gives the reachable case a live target without any network.
+    # Async with no polling leaves it serving for the rest of the sequence;
+    # destroy removes it with the container.
+    - name: Start a local HTTP listener for the egress probe's reachable case
+      ansible.builtin.command:
+        cmd: python3 -m http.server 18083 --bind 127.0.0.1
+      async: 86400
+      poll: 0
+      changed_when: false
+
+    - name: Wait for the local HTTP listener to accept connections
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 18083
+        timeout: 30

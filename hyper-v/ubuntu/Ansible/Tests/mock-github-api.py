@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#
 """Mock GitHub Actions runners API for every runner-side test.
 
 Single source for both directions of the GitHub Actions runners
@@ -18,6 +19,10 @@ Callers:
     Tests/ansible/test-deregister-runners-playbook.yml
         Exercises GET + DELETE (controller-side --force fan-out for
         unreachable VMs).
+
+    Tests/molecule/runner_status/default
+        Exercises GET across pages (the status play reads every page of
+        a repository's runners).
 
 Two mocks would each pull in the same MockHandler / _registered /
 _send_json / log_message / argparse boilerplate, so consolidating
@@ -50,7 +55,11 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlsplit
 
+
+# GitHub's page size when a request names none.
+_DEFAULT_PER_PAGE = 30
 
 # /repos/<owner>/<repo>/actions/runners/<id> with an optional query
 # string. Match group `runner_id` becomes a log field so the smoke
@@ -120,17 +129,26 @@ class MockHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._record()
-        # GET /repos/<owner>/<repo>/actions/runners[?per_page=...] is
-        # the only GET either caller makes; anything else is a test
-        # bug worth surfacing as a 404 instead of a silent 200.
-        path = self.path.split("?", 1)[0]
-        if path.endswith("/actions/runners"):
+        # GET /repos/<owner>/<repo>/actions/runners[?per_page=...&page=...]
+        # is the only GET any caller makes; anything else is a test bug
+        # worth surfacing as a 404 instead of a silent 200. It pages as
+        # GitHub does: total_count covers every runner, the list holds one
+        # page of them.
+        url = urlsplit(self.path)
+        if url.path.endswith("/actions/runners"):
+            query = parse_qs(url.query)
+            per_page = int(query.get("per_page", [_DEFAULT_PER_PAGE])[0])
+            page = int(query.get("page", ["1"])[0])
             registered = self._registered()
             runners = [
                 {"name": name, "id": idx + 1, "status": "online"}
                 for idx, name in enumerate(registered)
             ]
-            self._send_json(200, {"total_count": len(runners), "runners": runners})
+            start = (page - 1) * per_page
+            self._send_json(
+                200,
+                {"total_count": len(runners), "runners": runners[start:start + per_page]},
+            )
             return
         self._send_json(404, {"message": "not found"})
 

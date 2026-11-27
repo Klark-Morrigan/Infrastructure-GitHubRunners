@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#
 # Operator wrapper: report whether each declared GitHub Actions runner is
 # "up" - its on-VM systemd unit is active AND GitHub shows it online.
 #
@@ -17,16 +18,22 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # This repo's root (ops/ -> repo root): the consumer root the bridge resolves
 # the playbook, roles, and fragment from.
 CA_CONSUMER_ROOT="$(cd "${script_dir}/.." && pwd)"
 
 # shellcheck source=hyper-v/ubuntu/Ansible/ops/imports/_log.sh
 source "${script_dir}/imports/_log.sh"
+
 # shellcheck source=hyper-v/ubuntu/Ansible/ops/_require-gh-token.sh
 source "${script_dir}/_require-gh-token.sh"
+
 # shellcheck source=hyper-v/ubuntu/Ansible/ops/imports/_common-ansible-root.sh
 source "${script_dir}/imports/_common-ansible-root.sh"
+
+# shellcheck source=hyper-v/ubuntu/Ansible/ops/_decode-json-escapes.sh
+source "${script_dir}/_decode-json-escapes.sh"
 
 require_gh_token
 
@@ -38,9 +45,10 @@ export CA_CONSUMER_ROOT
 # The play colours its UP/DOWN report with ANSI inside debug msgs, but
 # Ansible's default callback JSON-encodes task results, so each ESC byte
 # arrives here as a literal backslash-u-001b escape (so a red marker shows
-# up as the visible text [31m). Translate it back to a real ESC so the
-# green / red renders. The translation lives in the wrapper, not the play,
-# because only this read-only report colours its output.
+# up as the visible text [31m). decode_json_escapes turns it, and any escaped
+# backslash or quote in a report line, back into the real character. The
+# decoding lives in the wrapper, not the play, because only this read-only
+# report colours its output.
 #
 # Piping disables Ansible's own PLAY / TASK colour (its stdout is no longer a
 # TTY), so force it back on and forward the flag across the WSL re-exec
@@ -49,6 +57,5 @@ export CA_CONSUMER_ROOT
 export ANSIBLE_FORCE_COLOR=1
 export WSLENV="${WSLENV:+${WSLENV}:}ANSIBLE_FORCE_COLOR"
 
-esc="$(printf '\033')"
 "${common_ansible_root}/ops/_run-playbook.sh" playbooks/runner-status.yml "$@" \
-    | sed "s/\\\\u001b/${esc}/g"
+    | decode_json_escapes

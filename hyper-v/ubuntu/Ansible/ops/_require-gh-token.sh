@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Do not run directly. Dot-sourced by register-runners.sh and
-# deregister-runners.sh (after imports/_log.sh, on which it depends for
-# log_err). Defines require_gh_token; no top-level side effects.
+#
+# Do not run directly. Dot-sourced by register-runners.sh,
+# deregister-runners.sh and runner-status.sh (after imports/_log.sh, on which
+# it depends for log_err).
+#
+# Defines require_gh_token; no top-level side effects.
 
 # ---------------------------------------------------------------------------
 # require_gh_token
 #   Ensures GH_TOKEN is set and exported, then returns; exits the calling
 #   script on failure. The GitHub PAT is supplied per-invocation and never
-#   stored in a vault, so both runner entries (register / deregister) need
-#   the same acquisition contract - hoisting it here keeps that contract in
-#   one place rather than copied across the two wrappers.
+#   stored in a vault, so every GitHub-facing wrapper needs the same
+#   acquisition contract - hoisting it here keeps that contract in one place
+#   rather than copied across the wrappers.
 #
 #   Resolution order:
 #     1. GH_TOKEN already in the environment -> use it (the unattended
@@ -29,6 +32,7 @@
 #   preset and no-TTY branches and the prompt itself is verified manually.
 # ---------------------------------------------------------------------------
 require_gh_token() {
+
     if [[ -n "${GH_TOKEN:-}" ]]; then
         export GH_TOKEN
         return 0
@@ -42,9 +46,11 @@ require_gh_token() {
 
     read -rsp 'GitHub token: ' GH_TOKEN
     echo
+
     if [[ -z "${GH_TOKEN}" ]]; then
         log_err 'GitHub token required'
         exit 2
     fi
+
     export GH_TOKEN
 }
